@@ -1,0 +1,176 @@
+Athena++ ストレージベンチマーク
+
+前提：
+Athena++のMHD計算を想定し、コアあたり64^3セルのファイル出力の弱スケーリングを測定する。
+
+
+手順：
+1. コードの設定を行うためコンフィギュレーションスクリプトを実行する。
+> cd athena
+> python configure.py --prob blast -m -b -hdf5 (Flat MPIの場合)
+> python configure.py --prob blast -m -o -b -hdf5 (Hybridの場合)
+
+デフォルトのコンパイラはg++だが、Intel, Clang, Crayコンパイラなどに対応している。
+コンパイラを指定する場合は--cxxオプションを、
+コンパイラコマンドが通常と異なる場合は--mpiccmdで指定する。
+> python configure.py --prob linear_wave -m -o -b -hdf5 --cxx=icpc --mpiccmd=mpiicpc
+--cxxオプションとしてはicpc (Intel Compiler Classic), icpx (Intel One API), 
+clang++またはclang++-simd（Clang）, cray (Cray Compiler)等をサポートしている。
+CPUにもよるが、Intel系ではicpcが最も高い性能を発揮する。
+（A64FX版が必要な場合はお知らせください。）
+
+HDF5出力にはMPI並列を有効にしてコンパイルされたpHDF5ライブラリが必要。
+ライブラリパスの指定やその他のオプションについてはpython configure.py -h
+で表示できるヘルプメッセージを参照。
+必要ならMakefileを編集してコンパイルオプションを追加する。
+
+
+2. コードをコンパイルする
+> make clean
+> make -j
+実行ファイルbin/athenaが生成される。
+
+
+3. 実行用ディレクトリを用意しパラメータファイルをコピーする。
+> mkdir work
+> cd work
+> cp ../bin/athena .
+> cp ../inputs/iobench/athinput.iobench*
+
+
+4. 実行
+athinput.iobenchXpYt ファイルはプロセス数X * スレッド数Y、MeshBlock数=X*Yで
+実行するためのファイルになっている。
+例えば8プロセスのFlat MPIの計算を実行するには以下のようにする。
+> mpiexec -n 8 ./athena -i athinput.iobench8p1t > log8p1t
+
+
+5. 性能の評価
+計算終了時に各アウトプットに要した時間をログに出力する。
+（公開版にはない機能。今回ベンチマーク用にコードを修正してある。）
+> vtk 0.014938 sec
+> hdf5 0.00999 sec
+> rst 0.018077 sec
+
+
+
+補足：
+1. 計算パラメータの指定
+athinputファイルで計算のパラメータを指定する。
+--------------------------------------------------------
+<output1>
+file_type  = vtk        # VTK data dump
+variable   = prim       # variables to be output
+dcycle     = 1          # time increment between outputs
+
+<output2>
+file_type  = hdf5       # HDF
+variable   = prim       # variables to be output
+xdmf       = false      # write XDMF
+dcycle     = 1          # time increment between outputs
+
+<output3>
+file_type  = rst        # Restart
+dcycle     = 1          # time increment between outputs
+
+<time>
+cfl_number = 0.3        # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = 0          # cycle limit
+tlim       = 1.0        # time limit
+integrator  = vl2       # time integration algorithm
+xorder      = 2         # order of spatial reconstruction
+ncycle_out  = 1         # interval for stdout summary info
+
+<mesh>
+nx1        = 64         # Number of zones in X1-direction
+x1min      = -1.0       # minimum value of X1
+x1max      =  1.0       # maximum value of X1
+ix1_bc     = periodic   # inner-X1 boundary flag
+ox1_bc     = periodic   # outer-X1 boundary flag
+
+nx2        = 64         # Number of zones in X2-direction
+x2min      = -1.0       # minimum value of X2
+x2max      =  1.0       # maximum value of X2
+ix2_bc     = periodic   # inner-X2 boundary flag
+ox2_bc     = periodic   # outer-X2 boundary flag
+
+nx3        = 64         # Number of zones in X3-direction
+x3min      = -1.0       # minimum value of X3
+x3max      =  1.0       # maximum value of X3
+ix3_bc     = periodic   # inner-X3 boundary flag
+ox3_bc     = periodic   # outer-X3 boundary flag
+
+num_threads = 1         # Number of OpenMP threads per process
+
+<meshblock>
+nx1        = 64
+nx2        = 64
+nx3        = 64
+--------------------------------------------------------
+<output>ブロックでは出力するファイルの指定を行う。
+<mesh>で計算領域全体のサイズなど領域全体に関する指定を行う。
+<meshblock>は領域分割単位であるMeshBlockのサイズを指定する。
+meshはmeshblockサイズの整数倍でなければならない。
+
+弱スケーリングテストではmeshblockサイズを固定し、
+meshのサイズを増やすことでmeshblockの数を増やして並列性能を測定する。
+Athena++ではプロセス（スレッド）あたりのmeshblock数は任意だが、
+理想的な性能を測定するには1プロセス（スレッド）あたり1meshblockを割り当てる。
+例えば上記の例で<mesh> nx1 = 128, nx2 = 128, nx3 = 128のようにすると
+8個のmeshblockが生成され、8並列で計算が可能となる。
+
+今回はファイル出力の性能測定だけが目的なので
+<time> nlim = 0として計算は実行せずファイルだけ生成している。
+
+
+2. コマンドラインでのパラメータの指定
+実行する計算ごとにパラメータファイルを用意する代わりに、
+実行時にパラメータをコマンドラインから上書きすることができる。例えば
+> mpicxx -n 64 ./atheana -i athinput.blast_n1 mesh/nx1=256 mesh/nx2=256 mesh/nx3=256
+のようにすれば、64並列で256^3の計算が実行できる。
+
+
+3. 並列化について
+Athena++ではMPIでもOpenMPでも1プロセス/スレッドがMeshBlockを担当する形で
+粗粒度で並列化している。つまり、OpenMPスレッドがMPIプロセスとほぼ等価に振舞う。
+そのため計算の実行には総並列数(X*Y)以上の数のMeshBlockが必要である。
+
+OpenMP並列を有効にするにはオプションを有効にしてコンパイルした上で
+<mesh> num_threads にプロセスあたりのスレッド数を指定する。
+ただしAthena++のファイル出力部はOpenMP並列化していないため、
+基本的にはスレッド数を増やす（プロセス数を減らす）と
+（IO帯域を使い切っていない限りは）その分性能が低下すると予想される。
+例としてathinput.iobench1p8tファイルを用意している。
+
+
+3. ファイルフォーマットについて
+Athena++では複数のファイルフォーマットをサポートしている：
+.tab: テキストテーブル（大規模並列計算では通常使用しない）
+.vtk: legacy VTK(Visualization Toolkit)と呼ばれるフォーマットで、
+      POSIX IOで1MeshBlockあたり1ファイルを生成する。
+      少量のヘッダ（テキスト）とシンプルな配列のバイナリダンプからなる。
+.athdf: 並列HDF5を用いて単一ファイルに全データを出力する。
+        デフォルトでは単精度だが必要なら倍精度も指定できる。
+        一部の解析ソフトで必要となるXDMFファイルを生成することもできるが、
+        この部分は1プロセスでしか実行されないため今回はオフにしてある。
+.rst: 計算を再起動するためのいわゆるチェックポイントデータ。
+      MPI-IOを用いて全データ（倍精度）を単一ファイルに出力する。
+上記のセットアップでは.vtkと.athdfがMeshBlockあたり約8MB, 
+.rstはMeshBlockあたり約20MBのデータを生成する。
+
+
+4. コードについて
+src/outputsディレクトリ以下にファイル出力関係のコードがある。
+ソースコードsrc/outputs/outputs.cppのOutputs::MakeOutputs内の
+1270行目 ptype->WriteOutputFile(pm, pin, wtflag);
+が実際のファイル出力関数。実装はvtk.cpp, athena_hdf5.cpp, restart.cpp。
+
+
+5. Athena++について
+Athena++は公開コードであり、このベンチマークテストも公開バージョンに基づいている。
+詳細は以下のWebサイトを参照のこと。
+英語：https://www.athena-astro.app/
+日本語：https://www.astr.tohoku.ac.jp/~tomida/athena/
+またコードの論文はStone et al. 2020, ApJS, 240, 4として出版されている：
+https://ui.adsabs.harvard.edu/abs/2020ApJS..249....4S/abstract
+

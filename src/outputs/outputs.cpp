@@ -80,6 +80,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>    // strcmp
+#include <ctime>      // clock(), CLOCKS_PER_SEC, clock_t
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -100,6 +101,11 @@
 #include "../parameter_input.hpp"
 #include "../scalars/scalars.hpp"
 #include "outputs.hpp"
+
+// MPI/OpenMP headers
+#ifdef MPI_PARALLEL
+#include <mpi.h>
+#endif
 
 //----------------------------------------------------------------------------------------
 //! OutputType constructor
@@ -1257,7 +1263,20 @@ void Outputs::MakeOutputs(Mesh *pm, ParameterInput *pin, bool wtflag) {
         pm->ApplyUserWorkBeforeOutput(pin);
         first = false;
       }
+#ifdef MPI_PARALLEL
+      MPI_Barrier(MPI_COMM_WORLD);
+#endif
+      clock_t tstart = clock();
       ptype->WriteOutputFile(pm, pin, wtflag);
+#ifdef MPI_PARALLEL
+      MPI_Barrier(MPI_COMM_WORLD);
+#endif
+      clock_t tstop = clock();
+      double cpu_time = static_cast<double> (tstop-tstart)
+                        / static_cast<double>(CLOCKS_PER_SEC);
+      if (Globals::my_rank == 0)
+        std::cout << ptype->output_params.file_type << " " << cpu_time
+                  << " sec" << std::endl;
     }
     ptype = ptype->pnext_type; // move to next OutputType node in singly linked list
   }

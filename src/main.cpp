@@ -537,7 +537,8 @@ int main(int argc, char *argv[]) {
 #ifdef ENABLE_EXCEPTIONS
   try {
 #endif
-    pouts->MakeOutputs(pmesh,pinput,true);
+    if (pmesh->ncycle != 0)
+      pouts->MakeOutputs(pmesh,pinput,true);
 #ifdef ENABLE_EXCEPTIONS
   }
   catch(std::bad_alloc& ba) {
