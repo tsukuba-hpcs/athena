@@ -11,5 +11,7 @@
 
 cd ${SLURM_SUBMIT_DIR}
 srun ./athena -i athinput.iobench64r  > log64r
+mv iobench_restart.final.rst iobench_restart.original.rst
 srun ./athena -r iobench_restart.00001.rst  > log64r2
-diff log64r log64r2 > log_diff
+cmp iobench_restart.final.rst iobench_restart.original.rst -l -b > log_diff
+
