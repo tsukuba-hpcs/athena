@@ -7,10 +7,13 @@
 //! \brief writes restart files
 
 // C headers
+#include <sys/stat.h>
+#include <sys/types.h>
 
 // C++ headers
 #include <cstdio>    // snprintf()
 #include <cstring>   // memcpy()
+#include <ctime>     // clock(), CLOCKS_PER_SEC, clock_t
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -40,6 +43,12 @@
 void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool force_write) {
   IOWrapper resfile;
   IOWrapperSizeT listsize, headeroffset, datasize;
+
+  // For IO Benchmark
+#ifdef MPI_PARALLEL
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  clock_t tstart = clock();
 
   // create single output filename:"file_basename"+"."+XXXXX+".rst",
   // where XXXXX = 5-digit file_number
@@ -227,4 +236,27 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool force_wr
 
   resfile.Close();
   delete [] data;
+
+  // For IO Benchmark
+#ifdef MPI_PARALLEL
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  if (Globals::my_rank == 0) {
+    clock_t tstop = clock();
+    double cpu_time = static_cast<double> (tstop-tstart)
+                      / static_cast<double>(CLOCKS_PER_SEC);
+    struct stat fs;
+    stat(fname.c_str(), &fs);
+    double sizemb = static_cast<double>(fs.st_size)/(1024.0*1024.0);
+    std::cout << "[IO Benchmark]" << std::endl
+              << "Number of MPI ranks: " << Globals::nranks << std::endl
+              << "File type: " << "Restart" << std::endl
+              << "File name: " << fname << std::endl
+              << "Number of MeshBlocks: " << pm->nbtotal << std::endl
+              << "File size: " << sizemb << " (MB)" << std::endl
+              << "Elapsed time: " << cpu_time << " (sec)" << std::endl
+              << "Output speed: " << sizemb / cpu_time << " (MB/sec)" << std::endl
+              << "Output speed per rank: " << sizemb / cpu_time / Globals::nranks << " (MB/sec)"
+              << std::endl << std::endl;
+  }
 }

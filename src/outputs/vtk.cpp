@@ -10,11 +10,14 @@
 //! Writes one file per MeshBlock.
 
 // C headers
+#include <sys/stat.h>
+#include <sys/types.h>
 
 // C++ headers
 #include <algorithm>
 #include <cstdio>      // fwrite(), fclose(), fopen(), fnprintf(), snprintf()
 #include <cstdlib>
+#include <ctime>     // clock(), CLOCKS_PER_SEC, clock_t
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -58,6 +61,13 @@ inline void Swap4Bytes(void *vdat) {
 void VTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
   int big_end = IsBigEndian(); // =1 on big endian machine
 
+  // For IO Benchmark
+  std::string lastfn;
+#ifdef MPI_PARALLEL
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  clock_t tstart = clock();
+
   // Loop over MeshBlocks
   for (int b=0; b<pm->nblocal; ++b) {
     MeshBlock *pmb = pm->my_blocks(b);
@@ -95,6 +105,7 @@ void VTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
     fname.append(".");
     fname.append(number);
     fname.append(".vtk");
+    lastfn = fname;
 
     // open file for output
     FILE *pfile;
@@ -218,6 +229,32 @@ void VTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
   output_params.next_time += output_params.dt;
   pin->SetInteger(output_params.block_name, "file_number", output_params.file_number);
   pin->SetReal(output_params.block_name, "next_time", output_params.next_time);
+
+  // For IO Benchmark
+#ifdef MPI_PARALLEL
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  if (Globals::my_rank == 0) {
+    clock_t tstop = clock();
+    double cpu_time = static_cast<double> (tstop-tstart)
+                      / static_cast<double>(CLOCKS_PER_SEC);
+    struct stat fs;
+    stat(lastfn.c_str(), &fs);
+    int nmb = pm->nbtotal;
+    double sizemb = static_cast<double>(fs.st_size)/(1024.0*1024.0);
+    std::cout << "[IO Benchmark]" << std::endl
+              << "Number of MPI ranks: " << Globals::nranks << std::endl
+              << "File type: " << "VTK" << std::endl
+              << "File name: " << output_params.file_basename << ".*."
+              << output_params.file_id << ".*.vtk" << std::endl
+              << "File size per MeshBlock: " << sizemb << " (MB)" << std::endl
+              << "Number of MeshBlocks: " << nmb << std::endl
+              << "Total file size: " << sizemb * nmb << " (MB)" << std::endl
+              << "Elapsed time: " << cpu_time << " (sec)" << std::endl
+              << "Output speed: " << sizemb * nmb / cpu_time << " (MB/sec)" << std::endl
+              << "Output speed per rank: " << sizemb * nmb / cpu_time / Globals::nranks
+              << " (MB/sec)" << std::endl << std::endl;
+  }
 
   return;
 }

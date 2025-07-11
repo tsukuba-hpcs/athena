@@ -7,10 +7,13 @@
 //! \brief hdf5 outputs
 
 // C headers
+#include <sys/stat.h>
+#include <sys/types.h>
 
 // C++ headers
 #include <cstdio>     // snprintf()
 #include <cstring>    // strlen(), strncpy()
+#include <ctime>     // clock(), CLOCKS_PER_SEC, clock_t
 #include <fstream>    // ofstream
 #include <iomanip>    // setfill(), setw()
 #include <iostream>   // cout
@@ -90,6 +93,12 @@ void ATHDF5Output::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
   H5Real *x2v_mesh;                            // array of x2 values on Mesh
   H5Real *x3v_mesh;                            // array of x3 values on Mesh
   H5Real **data_buffers;                       // array of data buffers
+
+  // For IO Benchmark
+#ifdef MPI_PARALLEL
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  clock_t tstart = clock();
 
   MeshBlock *pmb = pm->my_blocks(0);
   OutputData* pod;
@@ -804,6 +813,29 @@ void ATHDF5Output::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
 
   // Close .athdf file
   H5Fclose(file);
+
+  // For IO Benchmark
+#ifdef MPI_PARALLEL
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  if (Globals::my_rank == 0) {
+    clock_t tstop = clock();
+    double cpu_time = static_cast<double> (tstop-tstart)
+                      / static_cast<double>(CLOCKS_PER_SEC);
+    struct stat fs;
+    stat(filename.c_str(), &fs);
+    double sizemb = static_cast<double>(fs.st_size)/(1024.0*1024.0);
+    std::cout << "[IO Benchmark]" << std::endl
+              << "Number of MPI ranks: " << Globals::nranks << std::endl
+              << "File type: " << "HDF5" << std::endl
+              << "File name: " << filename << std::endl
+              << "Number of MeshBlocks: " << pm->nbtotal << std::endl
+              << "File size: " << sizemb << " (MB)" << std::endl
+              << "Elapsed time: " << cpu_time << " (sec)" << std::endl
+              << "Output speed: " << sizemb / cpu_time << " (MB/sec)" << std::endl
+              << "Output speed per rank: " << sizemb / cpu_time / Globals::nranks << " (MB/sec)"
+              << std::endl << std::endl;
+  }
 
   // Write .athdf.xdmf file
   int write_xdmf = pin->GetOrAddInteger(output_params.block_name, "xdmf", 1);
