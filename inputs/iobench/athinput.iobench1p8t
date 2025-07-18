@@ -20,6 +20,7 @@ dcycle     = 1          # time increment between outputs
 <output3>
 file_type  = rst        # Restart
 dcycle     = 1          # time increment between outputs
+collective = false
 
 <time>
 cfl_number = 0.3        # The Courant, Friedrichs, & Lewy (CFL) Number

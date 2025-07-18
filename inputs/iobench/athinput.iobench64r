@@ -9,6 +9,7 @@ problem_id = iobench_restart  # problem ID: basename of output filenames
 <output1>
 file_type  = rst        # Restart
 dcycle     = 100         # time increment between outputs
+collective = false
 
 <time>
 cfl_number = 0.3        # The Courant, Friedrichs, & Lewy (CFL) Number

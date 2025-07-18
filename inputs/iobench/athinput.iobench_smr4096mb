@@ -15,6 +15,7 @@ dcycle     = 1          # time increment between outputs
 <output2>
 file_type  = rst        # Restart
 dcycle     = 1          # time increment between outputs
+collective = false
 
 #<output3>
 #file_type  = vtk        # VTK data dump

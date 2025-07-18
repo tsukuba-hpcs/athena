@@ -43,6 +43,7 @@
 void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool force_write) {
   IOWrapper resfile;
   IOWrapperSizeT listsize, headeroffset, datasize;
+  bool collective = pin->GetOrAddBoolean(output_params.block_name, "collective", false);
 
   // For IO Benchmark
 #ifdef MPI_PARALLEL
@@ -228,7 +229,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool force_wr
 
     // now write restart data in parallel
     myoffset = headeroffset + listsize*nbtotal + datasize*(myns+b);
-    if (b < nbmin)
+    if (collective && b < nbmin)
       resfile.Write_at_all(data, datasize, 1, myoffset);
     else
       resfile.Write_at(data, datasize, 1, myoffset);
